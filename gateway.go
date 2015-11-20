@@ -3,14 +3,15 @@ package gatewayrpc
 import (
 	"bytes"
 	"fmt"
-	"github.com/gorilla/rpc/v2"
-	"github.com/gorilla/rpc/v2/json2"
-	"github.com/levenlabs/go-llog"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
+
+	"github.com/gorilla/rpc/v2"
+	"github.com/gorilla/rpc/v2/json2"
+	"github.com/levenlabs/go-llog"
 )
 
 type ServiceList struct {
@@ -18,26 +19,26 @@ type ServiceList struct {
 	mutex    sync.RWMutex
 }
 
-func (s *ServiceList) get(servMethod string) (*RemoteService, *Method, error) {
-	p := strings.Split(servMethod, ".")
-	if len(p) != 2 {
-		err := fmt.Errorf("rpc: service/method request ill-formed: %q", servMethod)
-		return nil, nil, err
-	}
-	s.mutex.RLock()
-	defer s.mutex.RUnlock()
-	serv, ok := s.Services[p[0]]
-	if !ok {
-		err := fmt.Errorf("rpc: can't find service %q", servMethod)
-		return nil, nil, err
-	}
-	m, ok := serv.Methods[p[1]]
-	if !ok {
-		err := fmt.Errorf("rpc: can't find method %q", servMethod)
-		return nil, nil, err
-	}
-	return serv, m, nil
-}
+//func (s *ServiceList) get(servMethod string) (*RemoteService, *Method, error) {
+//	p := strings.Split(servMethod, ".")
+//	if len(p) != 2 {
+//		err := fmt.Errorf("rpc: service/method request ill-formed: %q", servMethod)
+//		return nil, nil, err
+//	}
+//	s.mutex.RLock()
+//	defer s.mutex.RUnlock()
+//	serv, ok := s.Services[p[0]]
+//	if !ok {
+//		err := fmt.Errorf("rpc: can't find service %q", servMethod)
+//		return nil, nil, err
+//	}
+//	m, ok := serv.Methods[p[1]]
+//	if !ok {
+//		err := fmt.Errorf("rpc: can't find method %q", servMethod)
+//		return nil, nil, err
+//	}
+//	return serv, m, nil
+//}
 
 func (s *ServiceList) add(services []*RemoteService, overwrite bool) error {
 	s.mutex.Lock()
@@ -107,14 +108,14 @@ func NewGateway(enc rpc.Server) *GatewayServer {
 	return &GatewayServer{enc, map[string]rpc.Codec{}, ServiceList{}}
 }
 
-func (s *GatewayServer) HasMethod(method string) bool {
-	has := s.Server.HasMethod(method)
-	if !has {
-		_, _, err := s.remoteServices.get(method)
-		has = err == nil
-	}
-	return has
-}
+//func (s *GatewayServer) HasMethod(method string) bool {
+//	has := s.Server.HasMethod(method)
+//	if !has {
+//		_, _, err := s.remoteServices.get(method)
+//		has = err == nil
+//	}
+//	return has
+//}
 
 func getRemoteServices(address string, name string) ([]*RemoteService, error) {
 	//todo: don't assume JSON?
@@ -212,24 +213,24 @@ func (s *GatewayServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	llog.Info("Received method call", llog.KV{"method": method})
-	serv, m, err := s.remoteServices.get(method)
-	if err != nil {
-		llog.Info("Method not found in remote services", llog.KV{"method": method})
-		// if it isn't a remote service, punt it over to backing ServeHTTP
-		s.Server.ServeHTTP(w, r)
-		return
-	}
+	//serv, m, err := s.remoteServices.get(method)
+	//if err != nil {
+	//	llog.Info("Method not found in remote services", llog.KV{"method": method})
+	//	// if it isn't a remote service, punt it over to backing ServeHTTP
+	//	s.Server.ServeHTTP(w, r)
+	//	return
+	//}
 
-	var res []byte
-	res, err = serv.Call(m.Name, body, contentType)
-	if err != nil {
-		llog.Info("Error calling remote method", llog.KV{"error": err})
-		codecReq.WriteError(w, 400, err)
-		return
-	}
-	//pass along the content-type
-	w.Header().Set("Content-Type", contentType)
-	w.Write(res)
+	//var res []byte
+	//res, err = serv.Call(m.Name, body, contentType)
+	//if err != nil {
+	//	llog.Info("Error calling remote method", llog.KV{"error": err})
+	//	codecReq.WriteError(w, 400, err)
+	//	return
+	//}
+	////pass along the content-type
+	//w.Header().Set("Content-Type", contentType)
+	//w.Write(res)
 }
 
 func WriteError(w http.ResponseWriter, status int, msg string) {
