@@ -1,8 +1,8 @@
-// Package gatewayserver is a wrapper around a gorilla/rpc/v2 server which
+// Package gatewayrpc is a wrapper around a gorilla/rpc/v2 server which
 // registers a special endpoint, "RPC.GetServices", which returns a structure
 // containing a description of all services and their methods the rpc server
 // supports and their type signatures
-package gatewayserver
+package gatewayrpc
 
 import (
 	"errors"
@@ -14,14 +14,13 @@ import (
 	"unicode/utf8"
 
 	"github.com/gorilla/rpc/v2"
-	"github.com/levenlabs/gatewayrpc"
 )
 
 // Server is a simple wrapper around the normal gorilla/rpc/v2 server,
 // adding a couple extra features
 type Server struct {
 	*rpc.Server
-	services []gatewayrpc.Service
+	services []Service
 }
 
 // NewServer returns a new Server struct initialized with a gorilla/rpc/v2
@@ -34,7 +33,7 @@ func NewServer() *Server {
 
 // GetServicesRes describes the structure returned from the GetServices api call
 type GetServicesRes struct {
-	Services []gatewayrpc.Service `json:"services"`
+	Services []Service `json:"services"`
 }
 
 // GetServices is the actual rpc method which returns the set of services and
@@ -57,9 +56,9 @@ func (s *Server) RegisterService(receiver interface{}, name string) error {
 		return err
 	}
 
-	service := gatewayrpc.Service{
+	service := Service{
 		Name:    name,
-		Methods: map[string]gatewayrpc.Method{},
+		Methods: map[string]Method{},
 	}
 	for _, method := range getMethods(receiver) {
 		methodT := method.Type
@@ -71,7 +70,7 @@ func (s *Server) RegisterService(receiver interface{}, name string) error {
 		if err != nil {
 			return err
 		}
-		service.Methods[method.Name] = gatewayrpc.Method{
+		service.Methods[method.Name] = Method{
 			Name:    method.Name,
 			Args:    args,
 			Returns: res,
@@ -146,7 +145,7 @@ func getMethods(rcv interface{}) []reflect.Method {
 	return ret
 }
 
-func processType(t reflect.Type) (*gatewayrpc.Type, error) {
+func processType(t reflect.Type) (*Type, error) {
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
@@ -154,7 +153,7 @@ func processType(t reflect.Type) (*gatewayrpc.Type, error) {
 
 	// Bool through floats encompasses all integer and float types. Plus string
 	if (kind >= reflect.Bool && kind <= reflect.Float64) || kind == reflect.String {
-		return &gatewayrpc.Type{TypeOf: kind}, nil
+		return &Type{TypeOf: kind}, nil
 	}
 
 	if kind == reflect.Array || kind == reflect.Slice {
@@ -162,7 +161,7 @@ func processType(t reflect.Type) (*gatewayrpc.Type, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &gatewayrpc.Type{ArrayOf: innerT}, nil
+		return &Type{ArrayOf: innerT}, nil
 	}
 
 	if kind == reflect.Map {
@@ -174,18 +173,18 @@ func processType(t reflect.Type) (*gatewayrpc.Type, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &gatewayrpc.Type{MapOf: innerT}, nil
+		return &Type{MapOf: innerT}, nil
 	}
 
 	if kind == reflect.Interface {
 		if t != typeOfEmptyInterface {
 			return nil, fmt.Errorf("unsupported interface: %v", t)
 		}
-		return &gatewayrpc.Type{TypeOf: kind}, nil
+		return &Type{TypeOf: kind}, nil
 	}
 
 	if kind == reflect.Struct {
-		m := map[string]*gatewayrpc.Type{}
+		m := map[string]*Type{}
 		for i := 0; i < t.NumField(); i++ {
 			f := t.Field(i)
 			if !isExported(f.Name) {
@@ -198,7 +197,7 @@ func processType(t reflect.Type) (*gatewayrpc.Type, error) {
 			}
 			m[key] = innerT
 		}
-		return &gatewayrpc.Type{ObjectOf: m}, nil
+		return &Type{ObjectOf: m}, nil
 	}
 
 	return nil, fmt.Errorf("unsupported type: %v", t)

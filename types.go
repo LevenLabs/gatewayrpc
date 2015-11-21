@@ -1,23 +1,6 @@
 package gatewayrpc
 
-import (
-	"net/http"
-	"reflect"
-
-	"github.com/gorilla/rpc/v2"
-)
-
-type Server interface {
-	RegisterCodec(codec rpc.Codec, contentType string)
-
-	RegisterService(receiver interface{}, name string) error
-
-	HasMethod(method string) bool
-
-	ServeHTTP(w http.ResponseWriter, r *http.Request)
-
-	WriteError(w http.ResponseWriter, status int, msg string)
-}
+import "reflect"
 
 // Service describes an rpc service which has a set of methods it supports
 type Service struct {

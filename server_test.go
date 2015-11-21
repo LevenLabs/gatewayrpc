@@ -1,4 +1,4 @@
-package gatewayserver
+package gatewayrpc
 
 import (
 	"net/http"
@@ -6,7 +6,6 @@ import (
 	. "testing"
 
 	"github.com/gorilla/rpc/v2/json2"
-	"github.com/levenlabs/gatewayrpc"
 	"github.com/levenlabs/golib/rpcutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,16 +18,16 @@ type FooArgs struct {
 	B string `json:"b"`
 }
 
-var fooArgsType = &gatewayrpc.Type{ObjectOf: map[string]*gatewayrpc.Type{
-	"a": &gatewayrpc.Type{TypeOf: reflect.Int},
-	"b": &gatewayrpc.Type{TypeOf: reflect.String},
+var fooArgsType = &Type{ObjectOf: map[string]*Type{
+	"a": &Type{TypeOf: reflect.Int},
+	"b": &Type{TypeOf: reflect.String},
 }}
 
 type FooRes struct {
 	FooArgs `json:"args"`
 }
 
-var fooResType = &gatewayrpc.Type{ObjectOf: map[string]*gatewayrpc.Type{
+var fooResType = &Type{ObjectOf: map[string]*Type{
 	"args": fooArgsType,
 }}
 
@@ -44,14 +43,14 @@ type BarArgs struct {
 	D map[string]interface{} `json:"d"`
 }
 
-var barArgsType = &gatewayrpc.Type{ObjectOf: map[string]*gatewayrpc.Type{
-	"a": &gatewayrpc.Type{TypeOf: reflect.Int},
-	"b": &gatewayrpc.Type{ArrayOf: &gatewayrpc.Type{TypeOf: reflect.Int}},
-	"c": &gatewayrpc.Type{ArrayOf: fooArgsType},
-	"d": &gatewayrpc.Type{MapOf: &gatewayrpc.Type{TypeOf: reflect.Interface}},
+var barArgsType = &Type{ObjectOf: map[string]*Type{
+	"a": &Type{TypeOf: reflect.Int},
+	"b": &Type{ArrayOf: &Type{TypeOf: reflect.Int}},
+	"c": &Type{ArrayOf: fooArgsType},
+	"d": &Type{MapOf: &Type{TypeOf: reflect.Interface}},
 }}
 
-var barResType = &gatewayrpc.Type{}
+var barResType = &Type{}
 
 func (t TestEndpoint) Bar(r *http.Request, args *BarArgs, _ *struct{}) error {
 	return nil
@@ -100,9 +99,9 @@ func TestGetServices(t *T) {
 
 	var res GetServicesRes
 	require.Nil(t, rpcutil.JSONRPC2CallHandler(s, &res, "RPC.GetServices", &struct{}{}))
-	expected := []gatewayrpc.Service{{
+	expected := []Service{{
 		Name: "TestEndpoint",
-		Methods: map[string]gatewayrpc.Method{
+		Methods: map[string]Method{
 			"Foo": {
 				Name:    "Foo",
 				Args:    fooArgsType,
