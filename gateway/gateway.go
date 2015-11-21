@@ -54,10 +54,15 @@ type Gateway struct {
 	mutex    sync.RWMutex
 	codecs   map[string]rpc.Codec
 
-	// RequestCallback will be called just before actually forwarding a request
-	// onto its backend service. If false is returned, the forwarding will not
-	// be done. See the Request docstring for more on what is actually possible
-	// with this
+	// BackupHandler, if not nil, will be used to handle the requests which
+	// don't have a corresponding backend service to forward to (based on their
+	// method)
+	BackupHandler http.Handler
+
+	// RequestCallback, if not nil, will be called just before actually
+	// forwarding a request onto its backend service. If false is returned, the
+	// forwarding will not be done. See the Request docstring for more on what
+	// is actually possible with this
 	RequestCallback func(Request) bool
 }
 
@@ -206,6 +211,10 @@ func (g Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	u, rpcSrvName, rpcMethod, err := g.getMethod(m)
 	if err != nil {
+		if g.BackupHandler != nil {
+			g.BackupHandler.ServeHTTP(w, r)
+			return
+		}
 		kv["err"] = err
 		llog.Warn("Error retrieving method from gatway", kv)
 		codecReq.WriteError(w, 400, err)

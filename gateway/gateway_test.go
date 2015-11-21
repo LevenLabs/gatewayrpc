@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	. "testing"
 
+	"github.com/gorilla/rpc/v2"
 	"github.com/gorilla/rpc/v2/json2"
 	"github.com/levenlabs/gatewayrpc"
 	"github.com/levenlabs/golib/rpcutil"
@@ -40,6 +41,13 @@ func (t TestEndpoint) Bar(r *http.Request, args *BarArgs, _ *struct{}) error {
 	return nil
 }
 
+type TestEndpoint2 struct{}
+
+func (t2 TestEndpoint2) Wat(r *http.Request, _ *struct{}, res *struct{ A int }) error {
+	res.A = 5
+	return nil
+}
+
 func init() {
 	h := gatewayrpc.NewServer()
 	h.RegisterService(TestEndpoint{}, "")
@@ -71,6 +79,11 @@ func init() {
 
 		return true
 	}
+
+	backupHandler := rpc.NewServer()
+	backupHandler.RegisterCodec(json2.NewCodec(), "application/json")
+	backupHandler.RegisterService(TestEndpoint2{}, "")
+	testGateway.BackupHandler = backupHandler
 }
 
 var testURL string
@@ -106,4 +119,10 @@ func TestCallback(t *T) {
 
 	require.Nil(t, rpcutil.JSONRPC2CallHandler(testGateway, &res, "TestEndpoint.Bar", &args))
 	assert.True(t, res.Success)
+}
+
+func TestBackupHandler(t *T) {
+	var res struct{ A int }
+	require.Nil(t, rpcutil.JSONRPC2CallHandler(testGateway, &res, "TestEndpoint2.Wat", &struct{}{}))
+	assert.Equal(t, 5, res.A)
 }
