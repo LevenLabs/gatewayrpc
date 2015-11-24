@@ -36,18 +36,24 @@ func (t TestEndpoint) Foo(r *http.Request, args *FooArgs, res *FooRes) error {
 	return nil
 }
 
+type BazArgs struct {
+	AA int `json:"aa"`
+}
+
 type BarArgs struct {
 	A int                    `json:"a"`
 	B []int                  `json:"b"`
 	C []FooArgs              `json:"c"`
 	D map[string]interface{} `json:"d"`
+	BazArgs
 }
 
 var barArgsType = &Type{ObjectOf: map[string]*Type{
-	"a": &Type{TypeOf: reflect.Int},
-	"b": &Type{ArrayOf: &Type{TypeOf: reflect.Int}},
-	"c": &Type{ArrayOf: fooArgsType},
-	"d": &Type{MapOf: &Type{TypeOf: reflect.Interface}},
+	"a":  &Type{TypeOf: reflect.Int},
+	"b":  &Type{ArrayOf: &Type{TypeOf: reflect.Int}},
+	"c":  &Type{ArrayOf: fooArgsType},
+	"d":  &Type{MapOf: &Type{TypeOf: reflect.Interface}},
+	"aa": &Type{TypeOf: reflect.Int},
 }}
 
 var barResType = &Type{}
