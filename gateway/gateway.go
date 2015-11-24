@@ -207,7 +207,7 @@ func (g Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	kv["method"] = m
-	llog.Info("Received method call", kv)
+	llog.Debug("Received method call", kv)
 
 	u, rpcSrvName, rpcMethod, err := g.getMethod(m)
 	if err != nil {
@@ -220,6 +220,7 @@ func (g Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		codecReq.WriteError(w, 400, err)
 	}
 	r.URL = u
+	r.RequestURI = ""
 
 	if g.RequestCallback != nil && !g.RequestCallback(Request{
 		ResponseWriter: w,

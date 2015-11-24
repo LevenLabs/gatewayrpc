@@ -195,7 +195,14 @@ func processType(t reflect.Type) (*Type, error) {
 			if err != nil {
 				return nil, err
 			}
-			m[key] = innerT
+
+			if f.Anonymous && len(innerT.ObjectOf) > 0 {
+				for k, v := range innerT.ObjectOf {
+					m[k] = v
+				}
+			} else {
+				m[key] = innerT
+			}
 		}
 		return &Type{ObjectOf: m}, nil
 	}
