@@ -97,6 +97,10 @@ func TestGetMethod(t *T) {
 	assert.Equal(t, testURL, u.String())
 	assert.Equal(t, "TestEndpoint", s)
 	assert.Equal(t, "Foo", m.Name)
+
+	u, err = testGateway.GetMethodURL("TestEndpoint.Foo")
+	require.Nil(t, err)
+	assert.Equal(t, testURL, u.String())
 }
 
 func TestForwarding(t *T) {

@@ -158,6 +158,16 @@ func (g Gateway) getMethod(mStr string) (*url.URL, string, gatewayrpc.Method, er
 	return rsrv.URL, srvName, m, nil
 }
 
+// GetMethodURL returns the url which should be used to call the given method
+// ("Service.MethodName"). If the service was originally resolved using a srv
+// request it will be re-resolved everytime this is called, in order to
+// load-balance across instances. Will return an error if the service is
+// unknown, or the resolving fails for some reason.
+func (g Gateway) GetMethodURL(mStr string) (*url.URL, error) {
+	u, _, _, err := g.getMethod(mStr)
+	return u, err
+}
+
 // We really only need the params part of this, we can get everything else from
 // the codec
 type serverRequest struct {
