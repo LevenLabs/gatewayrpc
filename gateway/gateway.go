@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -64,6 +65,11 @@ type Gateway struct {
 	// forwarding will not be done. See the Request docstring for more on what
 	// is actually possible with this
 	RequestCallback func(Request) bool
+
+	// CORSMatch, if not nil, will be used against the Origin header. and if it
+	// matches Access-Control-Allow-* headers will be sent back, including an
+	// Allow-Access-Control-Origin matching the sent in Origin
+	CORSMatch *regexp.Regexp
 }
 
 // NewGateway returns an instantiated Gateway object
@@ -179,7 +185,20 @@ func (g Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	kv := rpcutil.RequestKV(r)
 	llog.Debug("ServeHTTP called", kv)
 
-	// except for the actually calling/validation this is just copy/paste from gorilla/rpc/v2
+	// Possibly check CORS and set the headers to send back if it matches
+	origin := r.Header.Get("Origin")
+	if origin != "" && g.CORSMatch != nil && g.CORSMatch.MatchString(origin) {
+		w.Header().Add("Access-Control-Allow-Origin", origin)
+		w.Header().Add("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Add("Access-Control-Allow-Credentials", "true")
+		w.Header().Add("Access-Control-Allow-Headers", "DNT, User-Agent, X-Requested-With, Content-Type")
+	}
+
+	// We allow OPTIONS so that preflighted requests can get CORS back
+	if r.Method == "OPTIONS" {
+		return
+	}
+
 	if r.Method != "POST" {
 		kv["method"] = r.Method
 		llog.Warn("Invalid method sent", kv)
