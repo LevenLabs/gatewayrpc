@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gorilla/rpc/v2"
+	"github.com/levenlabs/go-llog"
 )
 
 // Server is a simple wrapper around the normal gorilla/rpc/v2 server,
@@ -60,7 +61,9 @@ func (s *Server) RegisterService(receiver interface{}, name string) error {
 		Name:    name,
 		Methods: map[string]Method{},
 	}
+	llog.Debug("retrieving methods")
 	for _, method := range getMethods(receiver) {
+		llog.Debug("got method", llog.KV{"method": method.Name})
 		methodT := method.Type
 		args, err := processType(methodT.In(2))
 		if err != nil {

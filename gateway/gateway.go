@@ -111,6 +111,12 @@ func (g Gateway) AddURL(u string) error {
 		return err
 	}
 
+	for _, srv := range res.Services {
+		for m := range srv.Methods {
+			llog.Debug("adding method", llog.KV{"service": srv.Name, "method": m})
+		}
+	}
+
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
 	for _, srv := range res.Services {
