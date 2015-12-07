@@ -67,11 +67,11 @@ func (s *Server) RegisterService(receiver interface{}, name string) error {
 		methodT := method.Type
 		args, err := processType(methodT.In(2))
 		if err != nil {
-			return err
+			return fmt.Errorf("processing %q: %s", method.Name, err)
 		}
 		res, err := processType(methodT.In(3))
 		if err != nil {
-			return err
+			return fmt.Errorf("processing %q: %s", method.Name, err)
 		}
 		service.Methods[method.Name] = Method{
 			Name:    method.Name,
@@ -86,9 +86,8 @@ func (s *Server) RegisterService(receiver interface{}, name string) error {
 }
 
 var (
-	typeOfError          = reflect.TypeOf((*error)(nil)).Elem()
-	typeOfRequest        = reflect.TypeOf((*http.Request)(nil)).Elem()
-	typeOfEmptyInterface = reflect.TypeOf((*interface{})(nil)).Elem()
+	typeOfError   = reflect.TypeOf((*error)(nil)).Elem()
+	typeOfRequest = reflect.TypeOf((*http.Request)(nil)).Elem()
 )
 
 // Since name can optionally be specified to overwrite the name of rcv
@@ -180,9 +179,6 @@ func processType(t reflect.Type) (*Type, error) {
 	}
 
 	if kind == reflect.Interface {
-		if t != typeOfEmptyInterface {
-			return nil, fmt.Errorf("unsupported interface: %v", t)
-		}
 		return &Type{TypeOf: kind}, nil
 	}
 
