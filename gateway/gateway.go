@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gorilla/rpc/v2"
 	"github.com/levenlabs/gatewayrpc"
@@ -25,7 +26,8 @@ import (
 type remoteService struct {
 	gatewayrpc.Service
 	*url.URL
-	srv bool
+	origURL string
+	srv     bool
 }
 
 // Request contains all the data about an incoming request which is currently
@@ -54,6 +56,7 @@ type Gateway struct {
 	services map[string]remoteService
 	mutex    sync.RWMutex
 	codecs   map[string]rpc.Codec
+	poll     <-chan time.Time
 
 	// BackupHandler, if not nil, will be used to handle the requests which
 	// don't have a corresponding backend service to forward to (based on their
@@ -77,6 +80,7 @@ func NewGateway() Gateway {
 	return Gateway{
 		services: map[string]remoteService{},
 		codecs:   map[string]rpc.Codec{},
+		poll:     time.Tick(30 * time.Second),
 	}
 }
 
@@ -123,10 +127,30 @@ func (g Gateway) AddURL(u string) error {
 		g.services[srv.Name] = remoteService{
 			Service: srv,
 			URL:     uu,
+			origURL: u,
 			srv:     srvOK,
 		}
 	}
 	return nil
+}
+
+func (g Gateway) refreshURLs() {
+	llog.Debug("refreshing urls")
+	g.mutex.RLock()
+	srvs := make([]remoteService, 0, len(g.services))
+	for _, srv := range g.services {
+		srvs = append(srvs, srv)
+	}
+	g.mutex.RUnlock()
+
+	for _, srv := range srvs {
+		if err := g.AddURL(srv.origURL); err != nil {
+			llog.Error("error refreshing url", llog.KV{
+				"url": srv.origURL,
+				"err": err,
+			})
+		}
+	}
 }
 
 // RegisterCodec is used to register an encoder/decoder which will operate on
@@ -188,6 +212,17 @@ type serverRequest struct {
 }
 
 func (g Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Periodically we want to refresh the services that gateway knows about. We
+	// do it in a new goroutine so we don't block this actual request. We don't
+	// want to simply have a dedicated go routine looping over the poll channel
+	// to do this because having an http.Handler spawn up its own routine that's
+	// making requests and doing stuff is kind of unexpected behavior
+	select {
+	case <-g.poll:
+		go g.refreshURLs()
+	default:
+	}
+
 	kv := rpcutil.RequestKV(r)
 	llog.Debug("ServeHTTP called", kv)
 
