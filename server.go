@@ -85,6 +85,14 @@ func (s *Server) RegisterService(receiver interface{}, name string) error {
 	return nil
 }
 
+// RegisterHiddenService passes its arguments through to the underlying
+// gorilla/rpc/v2 server, but unlike RegisterService does NOT add the receiver's
+// method data to the Server's cache, so the receiver won't show up in calls to
+// GetMethods
+func (s *Server) RegisterHiddenService(receiver interface{}, name string) error {
+	return s.Server.RegisterService(receiver, name)
+}
+
 var (
 	typeOfError   = reflect.TypeOf((*error)(nil)).Elem()
 	typeOfRequest = reflect.TypeOf((*http.Request)(nil)).Elem()
