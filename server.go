@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gorilla/rpc/v2"
+	"github.com/levenlabs/gatewayrpc/gatewaytypes"
 	"github.com/levenlabs/go-llog"
 )
 

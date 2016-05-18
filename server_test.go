@@ -6,6 +6,7 @@ import (
 	. "testing"
 
 	"github.com/gorilla/rpc/v2/json2"
+	"github.com/levenlabs/gatewayrpc/gatewaytypes"
 	"github.com/levenlabs/golib/rpcutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,7 +25,7 @@ var fooArgsType = &Type{ObjectOf: map[string]*Type{
 }}
 
 type FooRes struct {
-	FooArgs `json:"args"`
+	FooArgs FooArgs `json:"args"`
 }
 
 var fooResType = &Type{ObjectOf: map[string]*Type{
@@ -33,6 +34,16 @@ var fooResType = &Type{ObjectOf: map[string]*Type{
 
 func (t TestEndpoint) Foo(r *http.Request, args *FooArgs, res *FooRes) error {
 	res.FooArgs = *args
+	return nil
+}
+
+type FooAnonRes struct {
+	FooArgs `json:"args"`
+}
+
+var fooAnonResType = fooArgsType
+
+func (t TestEndpoint) FooAnon(r *http.Request, args *FooArgs, res *FooAnonRes) error {
 	return nil
 }
 
@@ -83,9 +94,10 @@ func TestGetName(t *T) {
 
 func TestGetMethods(t *T) {
 	m := getMethods(TestEndpoint{})
-	require.Equal(t, 2, len(m))
-	assert.True(t, m[0].Name == "Foo" || m[0].Name == "Bar")
-	assert.True(t, m[1].Name == "Foo" || m[1].Name == "Bar")
+	require.Equal(t, 3, len(m))
+	assert.Equal(t, "Bar", m[0].Name)
+	assert.Equal(t, "Foo", m[1].Name)
+	assert.Equal(t, "FooAnon", m[2].Name)
 }
 
 func TestProcessType(t *T) {
@@ -108,15 +120,20 @@ func TestGetServices(t *T) {
 	expected := []Service{{
 		Name: "TestEndpoint",
 		Methods: map[string]Method{
+			"Bar": {
+				Name:    "Bar",
+				Args:    barArgsType,
+				Returns: barResType,
+			},
 			"Foo": {
 				Name:    "Foo",
 				Args:    fooArgsType,
 				Returns: fooResType,
 			},
-			"Bar": {
-				Name:    "Bar",
-				Args:    barArgsType,
-				Returns: barResType,
+			"FooAnon": {
+				Name:    "FooAnon",
+				Args:    fooArgsType,
+				Returns: fooAnonResType,
 			},
 		},
 	}}
