@@ -17,7 +17,7 @@ import (
 type TestEndpoint struct{}
 
 type FooArgs struct {
-	A int    `json:"a"`
+	A int64  `json:"a"`
 	B string `json:"b"`
 }
 
@@ -61,23 +61,21 @@ func init() {
 		panic(err)
 	}
 
-	testGateway.RequestCallback = func(r Request) bool {
-		if r.Method.Name != "Bar" {
-			return true
+	testGateway.RequestCallback = func(r *Request) {
+		if m, _ := r.Method(); m != "TestEndpoint.Bar" {
+			return
 		}
 
 		args := BarArgs{}
-		if err := r.CodecRequest.ReadRequest(&args); err != nil {
-			r.CodecRequest.WriteError(r.ResponseWriter, 400, errors.New("couldn't read bar args"))
-			return false
+		if err := r.ReadRequest(&args); err != nil {
+			r.WriteError(400, errors.New("couldn't read args"))
+			return
 		}
 
 		if args.A == 5 {
-			r.CodecRequest.WriteResponse(r.ResponseWriter, map[string]bool{"Success": true})
-			return false
+			r.WriteResponse(map[string]bool{"Success": true})
+			return
 		}
-
-		return true
 	}
 
 	backupHandler := rpc.NewServer()
@@ -92,13 +90,12 @@ var testGateway Gateway
 func TestGetMethod(t *T) {
 	// testGateway already had AddURL called on it, so we just check that the
 	// data is there
-	u, s, m, err := testGateway.getMethod("TestEndpoint.Foo")
+	rsrv, m, err := testGateway.getMethod("TestEndpoint.Foo")
 	require.Nil(t, err)
-	assert.Equal(t, testURL, u.String())
-	assert.Equal(t, "TestEndpoint", s)
+	assert.Equal(t, testURL, rsrv.URL.String())
 	assert.Equal(t, "Foo", m.Name)
 
-	u, err = testGateway.GetMethodURL("TestEndpoint.Foo")
+	u, err := testGateway.GetMethodURL("TestEndpoint.Foo")
 	require.Nil(t, err)
 	assert.Equal(t, testURL, u.String())
 }

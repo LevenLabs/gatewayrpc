@@ -22,7 +22,7 @@ import (
 // adding a couple extra features
 type Server struct {
 	*rpc.Server
-	services []Service
+	services []gatewaytypes.Service
 }
 
 // NewServer returns a new Server struct initialized with a gorilla/rpc/v2
@@ -35,7 +35,7 @@ func NewServer() *Server {
 
 // GetServicesRes describes the structure returned from the GetServices api call
 type GetServicesRes struct {
-	Services []Service `json:"services"`
+	Services []gatewaytypes.Service `json:"services"`
 }
 
 // GetServices is the actual rpc method which returns the set of services and
@@ -58,9 +58,9 @@ func (s *Server) RegisterService(receiver interface{}, name string) error {
 		return err
 	}
 
-	service := Service{
+	service := gatewaytypes.Service{
 		Name:    name,
-		Methods: map[string]Method{},
+		Methods: map[string]gatewaytypes.Method{},
 	}
 	llog.Debug("retrieving methods")
 	for _, method := range getMethods(receiver) {
@@ -74,7 +74,7 @@ func (s *Server) RegisterService(receiver interface{}, name string) error {
 		if err != nil {
 			return fmt.Errorf("processing %q: %s", method.Name, err)
 		}
-		service.Methods[method.Name] = Method{
+		service.Methods[method.Name] = gatewaytypes.Method{
 			Name:    method.Name,
 			Args:    args,
 			Returns: res,
@@ -156,7 +156,7 @@ func getMethods(rcv interface{}) []reflect.Method {
 	return ret
 }
 
-func processType(t reflect.Type) (*Type, error) {
+func processType(t reflect.Type) (*gatewaytypes.Type, error) {
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
@@ -164,7 +164,7 @@ func processType(t reflect.Type) (*Type, error) {
 
 	// Bool through floats encompasses all integer and float types. Plus string
 	if (kind >= reflect.Bool && kind <= reflect.Float64) || kind == reflect.String {
-		return &Type{TypeOf: kind}, nil
+		return &gatewaytypes.Type{TypeOf: kind}, nil
 	}
 
 	if kind == reflect.Array || kind == reflect.Slice {
@@ -172,7 +172,7 @@ func processType(t reflect.Type) (*Type, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &Type{ArrayOf: innerT}, nil
+		return &gatewaytypes.Type{ArrayOf: innerT}, nil
 	}
 
 	if kind == reflect.Map {
@@ -184,15 +184,15 @@ func processType(t reflect.Type) (*Type, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &Type{MapOf: innerT}, nil
+		return &gatewaytypes.Type{MapOf: innerT}, nil
 	}
 
 	if kind == reflect.Interface {
-		return &Type{TypeOf: kind}, nil
+		return &gatewaytypes.Type{TypeOf: kind}, nil
 	}
 
 	if kind == reflect.Struct {
-		m := map[string]*Type{}
+		m := map[string]*gatewaytypes.Type{}
 		for i := 0; i < t.NumField(); i++ {
 			f := t.Field(i)
 			if !isExported(f.Name) {
@@ -212,7 +212,7 @@ func processType(t reflect.Type) (*Type, error) {
 				m[key] = innerT
 			}
 		}
-		return &Type{ObjectOf: m}, nil
+		return &gatewaytypes.Type{ObjectOf: m}, nil
 	}
 
 	return nil, fmt.Errorf("unsupported type: %v", t)

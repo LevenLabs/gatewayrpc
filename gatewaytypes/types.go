@@ -1,4 +1,4 @@
-package gatewayrpc
+package gatewaytypes
 
 import "reflect"
 

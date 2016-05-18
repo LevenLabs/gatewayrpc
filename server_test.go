@@ -19,16 +19,16 @@ type FooArgs struct {
 	B string `json:"b"`
 }
 
-var fooArgsType = &Type{ObjectOf: map[string]*Type{
-	"a": &Type{TypeOf: reflect.Int},
-	"b": &Type{TypeOf: reflect.String},
+var fooArgsType = &gatewaytypes.Type{ObjectOf: map[string]*gatewaytypes.Type{
+	"a": &gatewaytypes.Type{TypeOf: reflect.Int},
+	"b": &gatewaytypes.Type{TypeOf: reflect.String},
 }}
 
 type FooRes struct {
 	FooArgs FooArgs `json:"args"`
 }
 
-var fooResType = &Type{ObjectOf: map[string]*Type{
+var fooResType = &gatewaytypes.Type{ObjectOf: map[string]*gatewaytypes.Type{
 	"args": fooArgsType,
 }}
 
@@ -59,15 +59,15 @@ type BarArgs struct {
 	BazArgs
 }
 
-var barArgsType = &Type{ObjectOf: map[string]*Type{
-	"a":  &Type{TypeOf: reflect.Int},
-	"b":  &Type{ArrayOf: &Type{TypeOf: reflect.Int}},
-	"c":  &Type{ArrayOf: fooArgsType},
-	"d":  &Type{MapOf: &Type{TypeOf: reflect.Interface}},
-	"aa": &Type{TypeOf: reflect.Int},
+var barArgsType = &gatewaytypes.Type{ObjectOf: map[string]*gatewaytypes.Type{
+	"a":  &gatewaytypes.Type{TypeOf: reflect.Int},
+	"b":  &gatewaytypes.Type{ArrayOf: &gatewaytypes.Type{TypeOf: reflect.Int}},
+	"c":  &gatewaytypes.Type{ArrayOf: fooArgsType},
+	"d":  &gatewaytypes.Type{MapOf: &gatewaytypes.Type{TypeOf: reflect.Interface}},
+	"aa": &gatewaytypes.Type{TypeOf: reflect.Int},
 }}
 
-var barResType = &Type{}
+var barResType = &gatewaytypes.Type{}
 
 func (t TestEndpoint) Bar(r *http.Request, args *BarArgs, _ *struct{}) error {
 	return nil
@@ -117,9 +117,9 @@ func TestGetServices(t *T) {
 
 	var res GetServicesRes
 	require.Nil(t, rpcutil.JSONRPC2CallHandler(s, &res, "RPC.GetServices", &struct{}{}))
-	expected := []Service{{
+	expected := []gatewaytypes.Service{{
 		Name: "TestEndpoint",
-		Methods: map[string]Method{
+		Methods: map[string]gatewaytypes.Method{
 			"Bar": {
 				Name:    "Bar",
 				Args:    barArgsType,

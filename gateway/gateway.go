@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"regexp"
 	"strings"
@@ -17,38 +18,35 @@ import (
 	"time"
 
 	"github.com/gorilla/rpc/v2"
-	"github.com/levenlabs/gatewayrpc"
+	"github.com/gorilla/rpc/v2/json2"
+	"github.com/levenlabs/gatewayrpc/gatewaytypes"
 	"github.com/levenlabs/go-llog"
 	"github.com/levenlabs/go-srvclient"
 	"github.com/levenlabs/golib/rpcutil"
 )
 
 type remoteService struct {
-	gatewayrpc.Service
+	gatewaytypes.Service
 	*url.URL
 	origURL string
-	srv     bool
 }
 
-// Request contains all the data about an incoming request which is currently
-// known. It can be used in conjunction to RequestCallback in order to provide
-// extra functionality or checks to request coming through.
-//
-// Notably, rpc.CodecRequest can be used to read in the arguments of the call
-// and write back responses or errors to the client if no forwarding should be
-// done.
-//
-// Also, the Body of the *http.Request will be filled with the raw body of
-// content which originally came in, and there's no need to actually close it.
-// the *http.Request's URL field will also have been modified to reflect the url
-// the request will be being forwarded to.
-type Request struct {
-	http.ResponseWriter
-	*http.Request
-	ServiceName string
-	gatewayrpc.Method
-	rpc.CodecRequest
-}
+var externalHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	res, err := http.DefaultClient.Do(r)
+	if err != nil {
+		llog.Error("error forwarding request", llog.KV{
+			"url": r.URL.String(),
+			"err": err,
+		})
+		writeErrorf(w, 500, "{}")
+		return
+	}
+	defer res.Body.Close()
+
+	//pass along the content-type
+	w.Header().Set("Content-Type", res.Header.Get("Content-Type"))
+	io.Copy(w, res.Body)
+})
 
 // Gateway is an http.Handler which implements the JSON RPC2 spec, but forwards
 // all of its requests onto backend services
@@ -57,6 +55,7 @@ type Gateway struct {
 	mutex    sync.RWMutex
 	codecs   map[string]rpc.Codec
 	poll     <-chan time.Time
+	srv      *srvclient.SRVClient
 
 	// BackupHandler, if not nil, will be used to handle the requests which
 	// don't have a corresponding backend service to forward to (based on their
@@ -64,10 +63,10 @@ type Gateway struct {
 	BackupHandler http.Handler
 
 	// RequestCallback, if not nil, will be called just before actually
-	// forwarding a request onto its backend service. If false is returned, the
-	// forwarding will not be done. See the Request docstring for more on what
-	// is actually possible with this
-	RequestCallback func(Request) bool
+	// forwarding a request onto its backend service. See the Request docstring
+	// for more on what is actually possible with this. If you respond to the
+	// Request using a Write* method then no forwarding will be done
+	RequestCallback func(*Request)
 
 	// CORSMatch, if not nil, will be used against the Origin header. and if it
 	// matches Access-Control-Allow-* headers will be sent back, including an
@@ -77,24 +76,22 @@ type Gateway struct {
 
 // NewGateway returns an instantiated Gateway object
 func NewGateway() Gateway {
+	srv := &srvclient.SRVClient{}
+	srv.EnableCacheLast()
 	return Gateway{
 		services: map[string]remoteService{},
 		codecs:   map[string]rpc.Codec{},
 		poll:     time.Tick(30 * time.Second),
+		srv:      srv,
 	}
 }
 
 // returns a copy of the given url, with the host potentially resolved using a
 // srv request
-func resolveURL(uu *url.URL) (*url.URL, bool) {
-	var srv bool
+func (g Gateway) resolveURL(uu *url.URL) *url.URL {
 	uu2 := *uu
-	host, err := srvclient.SRV(uu2.Host)
-	if err == nil {
-		srv = true
-		uu2.Host = host
-	}
-	return &uu2, srv
+	uu2.Host = g.srv.MaybeSRV(uu.Host)
+	return &uu2
 }
 
 // AddURL performs the RPC.GetServices request against the given url, and will
@@ -103,15 +100,24 @@ func resolveURL(uu *url.URL) (*url.URL, bool) {
 // All DNS will be attempted to be resolved using SRV records first, and will
 // use a normal DNS request as a backup
 func (g Gateway) AddURL(u string) error {
+	if !strings.HasPrefix(u, "http") {
+		u = "http://" + u
+	}
 	uu, err := url.Parse(u)
 	if err != nil {
 		return err
 	}
+	if uu.Host == "" {
+		return errors.New("invalid url specified")
+	}
 
-	uu2, srvOK := resolveURL(uu)
+	u2 := g.resolveURL(uu).String()
+	llog.Debug("resolved add url", llog.KV{"originalURL": u, "resolvedURL": u2})
 
-	res := gatewayrpc.GetServicesRes{}
-	if err = rpcutil.JSONRPC2Call(uu2.String(), &res, "RPC.GetServices", &struct{}{}); err != nil {
+	res := struct {
+		Services []gatewaytypes.Service `json:"services"`
+	}{}
+	if err = rpcutil.JSONRPC2Call(u2, &res, "RPC.GetServices", &struct{}{}); err != nil {
 		return err
 	}
 
@@ -128,7 +134,6 @@ func (g Gateway) AddURL(u string) error {
 			Service: srv,
 			URL:     uu,
 			origURL: u,
-			srv:     srvOK,
 		}
 	}
 	return nil
@@ -159,39 +164,23 @@ func (g Gateway) RegisterCodec(codec rpc.Codec, contentType string) {
 	g.codecs[strings.ToLower(contentType)] = codec
 }
 
-// returns the string form of the url which should handle this method
-// ("Service.MethodName"), as well as the method's details. Returns an error if
-// the method couldn't be found
-func (g Gateway) getMethod(mStr string) (*url.URL, string, gatewayrpc.Method, error) {
-	var m gatewayrpc.Method
-
+func (g Gateway) getMethod(mStr string) (rsrv remoteService, m gatewaytypes.Method, err error) {
 	parts := strings.SplitN(mStr, ".", 2)
 	if len(parts) != 2 {
-		return nil, "", m, errors.New("invalid method endpoint given")
+		err = errors.New("invalid method endpoint given")
+		return
 	}
 	srvName, mName := parts[0], parts[1]
 
+	var ok bool
 	g.mutex.RLock()
-	rsrv, ok := g.services[srvName]
-	g.mutex.RUnlock()
-	if !ok {
-		return nil, srvName, m, errors.New("unknown service name")
+	defer g.mutex.RUnlock()
+	if rsrv, ok = g.services[srvName]; !ok {
+		err = errors.New("no remote service for given name")
+	} else if m, ok = rsrv.Methods[mName]; !ok {
+		err = errors.New("remote service cannot handle this method")
 	}
-
-	m, ok = rsrv.Methods[mName]
-	if !ok {
-		return nil, srvName, m, errors.New("unknown method name")
-	}
-
-	if rsrv.srv {
-		uu, srvOK := resolveURL(rsrv.URL)
-		if !srvOK {
-			return nil, srvName, m, errors.New("could not resolve host via srv")
-		}
-		return uu, srvName, m, nil
-	}
-
-	return rsrv.URL, srvName, m, nil
+	return
 }
 
 // GetMethodURL returns the url which should be used to call the given method
@@ -200,8 +189,8 @@ func (g Gateway) getMethod(mStr string) (*url.URL, string, gatewayrpc.Method, er
 // load-balance across instances. Will return an error if the service is
 // unknown, or the resolving fails for some reason.
 func (g Gateway) GetMethodURL(mStr string) (*url.URL, error) {
-	u, _, _, err := g.getMethod(mStr)
-	return u, err
+	rsrv, _, err := g.getMethod(mStr)
+	return g.resolveURL(rsrv.URL), err
 }
 
 // We really only need the params part of this, we can get everything else from
@@ -211,6 +200,7 @@ type serverRequest struct {
 	Params *json.RawMessage `json:"params"`
 }
 
+// ServeHTTP satisfies Gateway being a http.Handler
 func (g Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Periodically we want to refresh the services that gateway knows about. We
 	// do it in a new goroutine so we don't block this actual request. We don't
@@ -242,7 +232,7 @@ func (g Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method != "POST" {
 		kv["method"] = r.Method
-		llog.Warn("Invalid method sent", kv)
+		llog.Warn("invalid method sent", kv)
 		writeErrorf(w, 405, "rpc: POST method required, received %q", r.Method)
 		return
 	}
@@ -252,26 +242,28 @@ func (g Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if idx != -1 {
 		contentType = contentType[:idx]
 	}
-	codec := g.codecs[strings.ToLower(contentType)]
-	if codec == nil {
+	var codec rpc.Codec
+	// if no contentType was sent, assume the first codec if only one in list
+	// see: https://github.com/gorilla/rpc/pull/42/
+	if contentType == "" && len(g.codecs) == 1 {
+		// since codecs is a map we just need to loop and stop after the first
+		for _, c := range g.codecs {
+			codec = c
+			break
+		}
+	} else if codec = g.codecs[strings.ToLower(contentType)]; codec == nil {
 		kv["contentType"] = contentType
-		llog.Warn("Unrecognized Content-Type", kv)
+		llog.Warn("unknown content-type sent", kv)
 		writeErrorf(w, 415, "rpc: unrecognized Content-Type: %q", contentType)
 		return
 	}
-
-	bodyCopy := bytes.NewBuffer(make([]byte, 0, r.ContentLength))
-	r.Body = ioutil.NopCloser(io.TeeReader(r.Body, bodyCopy))
+	// note: this will consume the r.Body
 	codecReq := codec.NewRequest(r)
-	r.Body = ioutil.NopCloser(bodyCopy)
-
-	// At this point the original r.Body was read into the codecReq, but the
-	// TeeReader has also copied it into bodyCopy, which was then set to r.Body
 
 	m, err := codecReq.Method()
 	if err != nil {
 		kv["err"] = err
-		llog.Warn("Err retrieving method from codec", kv)
+		llog.Warn("error retrieving method from codec", kv)
 		codecReq.WriteError(w, 400, err)
 		return
 	}
@@ -279,42 +271,75 @@ func (g Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	kv["method"] = m
 	llog.Debug("Received method call", kv)
 
-	u, rpcSrvName, rpcMethod, err := g.getMethod(m)
+	var handler http.Handler
+	rsrv, rpcMethod, err := g.getMethod(m)
 	if err != nil {
+		// if they passed a backup handler then use that instead of erroring
 		if g.BackupHandler != nil {
-			g.BackupHandler.ServeHTTP(w, r)
+			handler = g.BackupHandler
+		} else {
+			kv["err"] = err
+			llog.Warn("error getting method in gateway", kv)
+			codecReq.WriteError(w, 400, err)
 			return
 		}
-		kv["err"] = err
-		llog.Warn("Error retrieving method from gatway", kv)
-		codecReq.WriteError(w, 400, err)
+	} else {
+		// if there wasn't an error then we found an appropriate remote
+		handler = externalHandler
 	}
-	r.URL = u
+
+	req := &Request{
+		Request:      r,
+		ServiceName:  rsrv.Name,
+		RemoteMethod: rpcMethod,
+		respWriter:   w,
+		codecReq:     codecReq,
+	}
+	// resolve the url so we can forward it, if this is a remote request
+	if rsrv.URL != nil {
+		r.URL = g.resolveURL(rsrv.URL)
+	} else {
+		// this must be a request going to BackupHandler
+		r.URL = nil
+	}
 	r.RequestURI = ""
 
-	if g.RequestCallback != nil && !g.RequestCallback(Request{
-		ResponseWriter: w,
-		Request:        r,
-		ServiceName:    rpcSrvName,
-		Method:         rpcMethod,
-		CodecRequest:   codecReq,
-	}) {
+	if g.RequestCallback != nil {
+		g.RequestCallback(req)
+	}
+
+	// if something already responded to the request inside the callback, don't
+	// continue
+	if req.responded {
 		return
 	}
 
-	res, err := http.DefaultClient.Do(r)
+	// make a new request to send to the backend since the request
+	// might've been changed
+	// also when we called codec.NewRequest earlier that read r.Body
+	// so we no longer have the original body
+	b, err := req.getClientRequest()
 	if err != nil {
 		kv["err"] = err
-		llog.Error("Error forwarding request", kv)
+		llog.Warn("error encoding request to remote service", kv)
 		codecReq.WriteError(w, 500, err)
 		return
 	}
-	defer res.Body.Close()
+	r.Body = ioutil.NopCloser(bytes.NewBuffer(b))
+	// since we overwrote the body, we need to update Content-Length
+	r.ContentLength = int64(len(b))
+	rec := httptest.NewRecorder()
+	// since we wrote a new client request, we need to buffer the response
+	// and rewrite it using our original codec request
+	handler.ServeHTTP(rec, r)
 
-	//pass along the content-type
-	w.Header().Set("Content-Type", contentType)
-	io.Copy(w, res.Body)
-	res.Body.Close()
+	// we don't actually care what the response was so just use a RawMessage
+	resRes := &json.RawMessage{}
+	if err = json2.DecodeClientResponse(rec.Body, resRes); err != nil {
+		codecReq.WriteError(w, rec.Code, err)
+	} else {
+		codecReq.WriteResponse(w, resRes)
+	}
 }
 
 func writeErrorf(w http.ResponseWriter, status int, msg string, args ...interface{}) {
