@@ -66,11 +66,11 @@ func (s *Server) RegisterService(receiver interface{}, name string) error {
 	for _, method := range getMethods(receiver) {
 		llog.Debug("got method", llog.KV{"method": method.Name})
 		methodT := method.Type
-		args, err := processType(methodT.In(2))
+		args, err := processType(methodT.In(2), nil)
 		if err != nil {
 			return fmt.Errorf("processing %q: %s", method.Name, err)
 		}
-		res, err := processType(methodT.In(3))
+		res, err := processType(methodT.In(3), nil)
 		if err != nil {
 			return fmt.Errorf("processing %q: %s", method.Name, err)
 		}
@@ -156,11 +156,19 @@ func getMethods(rcv interface{}) []reflect.Method {
 	return ret
 }
 
-func processType(t reflect.Type) (*gatewaytypes.Type, error) {
+func processType(t reflect.Type, prevTypes []reflect.Type) (*gatewaytypes.Type, error) {
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
 	kind := t.Kind()
+
+	// If we've already had this type then this is a cycle
+	for _, prevType := range prevTypes {
+		if t == prevType {
+			return &gatewaytypes.Type{CycleOf: &struct{}{}}, nil
+		}
+	}
+	prevTypes = append(prevTypes, t)
 
 	// Bool through floats encompasses all integer and float types. Plus string
 	if (kind >= reflect.Bool && kind <= reflect.Float64) || kind == reflect.String {
@@ -168,7 +176,7 @@ func processType(t reflect.Type) (*gatewaytypes.Type, error) {
 	}
 
 	if kind == reflect.Array || kind == reflect.Slice {
-		innerT, err := processType(t.Elem())
+		innerT, err := processType(t.Elem(), prevTypes)
 		if err != nil {
 			return nil, err
 		}
@@ -180,7 +188,7 @@ func processType(t reflect.Type) (*gatewaytypes.Type, error) {
 			return nil, fmt.Errorf("unsupported map type: %v", t)
 		}
 
-		innerT, err := processType(t.Elem())
+		innerT, err := processType(t.Elem(), prevTypes)
 		if err != nil {
 			return nil, err
 		}
@@ -199,7 +207,7 @@ func processType(t reflect.Type) (*gatewaytypes.Type, error) {
 				continue
 			}
 			key := getFieldKey(f)
-			innerT, err := processType(f.Type)
+			innerT, err := processType(f.Type, prevTypes)
 			if err != nil {
 				return nil, err
 			}
