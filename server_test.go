@@ -73,6 +73,18 @@ func (t TestEndpoint) Bar(r *http.Request, args *BarArgs, _ *struct{}) error {
 	return nil
 }
 
+type BuzArgs struct {
+	BuzBuz []BuzArgs `json:"buzbuz"`
+}
+
+var buzArgsType = &gatewaytypes.Type{ObjectOf: map[string]*gatewaytypes.Type{
+	"buzbuz": &gatewaytypes.Type{ArrayOf: &gatewaytypes.Type{CycleOf: &struct{}{}}},
+}}
+
+func (t TestEndpoint) Buz(r *http.Request, args *BuzArgs, _ *struct{}) error {
+	return nil
+}
+
 // Wat is only here to ensure we don't accidentally pick up on any methods not
 // actually part of the rpc
 func (t TestEndpoint) Wat(a, b int) {}
@@ -94,20 +106,25 @@ func TestGetName(t *T) {
 
 func TestGetMethods(t *T) {
 	m := getMethods(TestEndpoint{})
-	require.Equal(t, 3, len(m))
+	require.Equal(t, 4, len(m))
 	assert.Equal(t, "Bar", m[0].Name)
-	assert.Equal(t, "Foo", m[1].Name)
-	assert.Equal(t, "FooAnon", m[2].Name)
+	assert.Equal(t, "Buz", m[1].Name)
+	assert.Equal(t, "Foo", m[2].Name)
+	assert.Equal(t, "FooAnon", m[3].Name)
 }
 
 func TestProcessType(t *T) {
-	typ, err := processType(reflect.TypeOf(&FooArgs{}))
+	typ, err := processType(reflect.TypeOf(&FooArgs{}), nil)
 	require.Nil(t, err)
 	assert.Equal(t, fooArgsType, typ)
 
-	typ, err = processType(reflect.TypeOf(&BarArgs{}))
+	typ, err = processType(reflect.TypeOf(&BarArgs{}), nil)
 	require.Nil(t, err)
 	assert.Equal(t, barArgsType, typ)
+
+	typ, err = processType(reflect.TypeOf(&BuzArgs{}), nil)
+	require.Nil(t, err)
+	assert.Equal(t, buzArgsType, typ)
 }
 
 func TestGetServices(t *T) {
@@ -134,6 +151,11 @@ func TestGetServices(t *T) {
 				Name:    "FooAnon",
 				Args:    fooArgsType,
 				Returns: fooAnonResType,
+			},
+			"Buz": {
+				Name:    "Buz",
+				Args:    buzArgsType,
+				Returns: &gatewaytypes.Type{},
 			},
 		},
 	}}

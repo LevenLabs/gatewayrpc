@@ -31,4 +31,9 @@ type Type struct {
 	// supports, and each key has a specific type. A MapOf supports any key
 	// (as long as it's a string) and all values must be of the given type
 	MapOf *Type `json:"mapOf,omitempty"`
+
+	// Used when the Type is recursive. Right now it's enough to simply say that
+	// there is a cycle with no further information, in the future we may add
+	// info about the cycle
+	CycleOf *struct{} `json:"cycleOf,omitempty"`
 }
