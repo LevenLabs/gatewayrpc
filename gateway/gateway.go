@@ -190,7 +190,10 @@ func (g Gateway) getMethod(mStr string) (rsrv remoteService, m gatewaytypes.Meth
 // unknown, or the resolving fails for some reason.
 func (g Gateway) GetMethodURL(mStr string) (*url.URL, error) {
 	rsrv, _, err := g.getMethod(mStr)
-	return g.resolveURL(rsrv.URL), err
+	if err != nil {
+		return nil, err
+	}
+	return g.resolveURL(rsrv.URL), nil
 }
 
 // We really only need the params part of this, we can get everything else from
