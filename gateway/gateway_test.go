@@ -85,7 +85,7 @@ func init() {
 }
 
 var testURL string
-var testGateway Gateway
+var testGateway *Gateway
 
 func TestGetMethod(t *T) {
 	// testGateway already had AddURL called on it, so we just check that the

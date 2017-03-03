@@ -51,11 +51,11 @@ var externalHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Reque
 // Gateway is an http.Handler which implements the JSON RPC2 spec, but forwards
 // all of its requests onto backend services
 type Gateway struct {
-	services map[string]remoteService
-	mutex    sync.RWMutex
-	codecs   map[string]rpc.Codec
-	poll     <-chan time.Time
-	srv      *srvclient.SRVClient
+	services  map[string]remoteService
+	mutex     sync.RWMutex
+	codecs    map[string]rpc.Codec
+	poll      <-chan time.Time
+	SRVClient *srvclient.SRVClient
 
 	// BackupHandler, if not nil, will be used to handle the requests which
 	// don't have a corresponding backend service to forward to (based on their
@@ -75,22 +75,22 @@ type Gateway struct {
 }
 
 // NewGateway returns an instantiated Gateway object
-func NewGateway() Gateway {
+func NewGateway() *Gateway {
 	srv := &srvclient.SRVClient{}
 	srv.EnableCacheLast()
 	return Gateway{
-		services: map[string]remoteService{},
-		codecs:   map[string]rpc.Codec{},
-		poll:     time.Tick(30 * time.Second),
-		srv:      srv,
+		services:  map[string]remoteService{},
+		codecs:    map[string]rpc.Codec{},
+		poll:      time.Tick(30 * time.Second),
+		SRVClient: srv,
 	}
 }
 
-// returns a copy of the given url, with the host potentially resolved using a
-// srv request
-func (g Gateway) resolveURL(uu *url.URL) *url.URL {
+// resolveURL returns a copy of the given url, with the host potentially
+// resolved using a srv request
+func (g *Gateway) resolveURL(uu *url.URL) *url.URL {
 	uu2 := *uu
-	uu2.Host = g.srv.MaybeSRV(uu.Host)
+	uu2.Host = g.SRVClient.MaybeSRV(uu.Host)
 	return &uu2
 }
 
@@ -99,7 +99,7 @@ func (g Gateway) resolveURL(uu *url.URL) *url.URL {
 //
 // All DNS will be attempted to be resolved using SRV records first, and will
 // use a normal DNS request as a backup
-func (g Gateway) AddURL(u string) error {
+func (g *Gateway) AddURL(u string) error {
 	if !strings.HasPrefix(u, "http") {
 		u = "http://" + u
 	}
@@ -139,7 +139,7 @@ func (g Gateway) AddURL(u string) error {
 	return nil
 }
 
-func (g Gateway) refreshURLs() {
+func (g *Gateway) refreshURLs() {
 	llog.Debug("refreshing urls")
 	g.mutex.RLock()
 	srvs := make([]remoteService, 0, len(g.services))
@@ -160,11 +160,11 @@ func (g Gateway) refreshURLs() {
 
 // RegisterCodec is used to register an encoder/decoder which will operate on
 // requests with the given contentType
-func (g Gateway) RegisterCodec(codec rpc.Codec, contentType string) {
+func (g *Gateway) RegisterCodec(codec rpc.Codec, contentType string) {
 	g.codecs[strings.ToLower(contentType)] = codec
 }
 
-func (g Gateway) getMethod(mStr string) (rsrv remoteService, m gatewaytypes.Method, err error) {
+func (g *Gateway) getMethod(mStr string) (rsrv remoteService, m gatewaytypes.Method, err error) {
 	parts := strings.SplitN(mStr, ".", 2)
 	if len(parts) != 2 {
 		err = errors.New("invalid method endpoint given")
@@ -188,7 +188,7 @@ func (g Gateway) getMethod(mStr string) (rsrv remoteService, m gatewaytypes.Meth
 // request it will be re-resolved everytime this is called, in order to
 // load-balance across instances. Will return an error if the service is
 // unknown, or the resolving fails for some reason.
-func (g Gateway) GetMethodURL(mStr string) (*url.URL, error) {
+func (g *Gateway) GetMethodURL(mStr string) (*url.URL, error) {
 	rsrv, _, err := g.getMethod(mStr)
 	if err != nil {
 		return nil, err
@@ -204,7 +204,7 @@ type serverRequest struct {
 }
 
 // ServeHTTP satisfies Gateway being a http.Handler
-func (g Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Periodically we want to refresh the services that gateway knows about. We
 	// do it in a new goroutine so we don't block this actual request. We don't
 	// want to simply have a dedicated go routine looping over the poll channel
