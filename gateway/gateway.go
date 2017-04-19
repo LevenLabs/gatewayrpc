@@ -22,6 +22,7 @@ import (
 	"github.com/levenlabs/gatewayrpc/gatewaytypes"
 	"github.com/levenlabs/go-llog"
 	"github.com/levenlabs/go-srvclient"
+	"github.com/levenlabs/golib/proxyutil"
 	"github.com/levenlabs/golib/rpcutil"
 )
 
@@ -332,6 +333,10 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// since we overwrote the body, we need to update Content-Length
 	r.ContentLength = int64(len(b))
 	rec := httptest.NewRecorder()
+
+	// remove all accepted encoding's since we want plain-text
+	proxyutil.FilterEncodings(r)
+
 	// since we wrote a new client request, we need to buffer the response
 	// and rewrite it using our original codec request
 	handler.ServeHTTP(rec, r)
