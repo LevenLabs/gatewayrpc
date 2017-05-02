@@ -4,6 +4,7 @@ package gateway
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,10 +36,12 @@ type remoteService struct {
 var externalHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	res, err := http.DefaultClient.Do(r)
 	if err != nil {
-		llog.Error("error forwarding request", llog.KV{
-			"url": r.URL.String(),
-			"err": err,
-		})
+		if err != context.Canceled {
+			llog.Error("error forwarding request", llog.KV{
+				"url": r.URL.String(),
+				"err": err,
+			})
+		}
 		writeErrorf(w, 500, "{}")
 		return
 	}
