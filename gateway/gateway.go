@@ -23,6 +23,7 @@ import (
 	"github.com/levenlabs/gatewayrpc/gatewaytypes"
 	"github.com/levenlabs/go-llog"
 	"github.com/levenlabs/go-srvclient"
+	"github.com/levenlabs/golib/errctx"
 	"github.com/levenlabs/golib/proxyutil"
 	"github.com/levenlabs/golib/rpcutil"
 )
@@ -36,6 +37,9 @@ type remoteService struct {
 var externalHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	res, err := http.DefaultClient.Do(r)
 	if err != nil {
+		if ue, ok := errctx.Base(err).(*url.Error); ok && ue.Err == context.Canceled {
+			err = context.Canceled
+		}
 		if err != context.Canceled {
 			llog.Error("error forwarding request", llog.KV{
 				"url": r.URL.String(),
