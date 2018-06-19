@@ -1,8 +1,8 @@
 language: go
 go:
-  - 1.7
-  - 1.8
-  - tip
+  - "1.x"
+install:
+  - go get -t -v ./...
 script:
   - go test -race -v -bench=. ./...
 notifications:
